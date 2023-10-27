@@ -16,12 +16,9 @@
 				@touchmove.stop class="content-swiper" :style="{height : swiperItemHeight + 'px'}" :key="index">
 				<swiper-item v-for="(item,index) of categoryInfo">
 					<uni-list v-if="item.collectMap.length >= 1" :id="'uni-list'+index">
-						<uni-list-item v-for="(map_item, map_index) of item.collectMap" :key="map_index" :title="map_item.name"
-							:note="map_item.description" :thumb="map_item.thumbnailUrl" thumb-size="lg"
-							clickable @click="onClick(map_item)"></uni-list-item>
-					</uni-list>
-					<uni-list v-else>
-						<view class="swiper-item uni-bg-blue"><text class="swiper-item-Text"></text></view>
+						<uni-list-item v-for="(map_item, map_index) of item.collectMap" :key="map_index"
+							:title="map_item.name" :note="map_item.description" :thumb="map_item.thumbnailUrl"
+							thumb-size="lg" clickable @click="onClick(map_item)"></uni-list-item>
 					</uni-list>
 				</swiper-item>
 			</swiper>
@@ -30,18 +27,30 @@
 </template>
 <script>
 	export default {
-		beforeMount() {
-			this.initialize();
+		async beforeMount() {
+			//初始化页面
+			await this.initialize();
 		},
 		mounted() {},
+		async onShow() {
+			//根据缓存变化 刷新页面
+			await this.updateCategoryInfo();
+		},
 		data() {
 			return {
+				//当前页面下标
 				currentIndex: 0,
+				tabIndex: 0,
+				//高度
 				currentCollectHeght: 0,
 				swiperItemHeight: 0,
+				//地图信息
 				categoryInfo: [],
-				tabIndex: 0,
 				all_map: new Map(),
+				category_response: null,
+				//缓存变化前后内容
+				currentContent: null,
+				previousContent: null
 			}
 		},
 
@@ -51,7 +60,19 @@
 			async initialize() {
 				//初始化界面
 				await this.getCategoryInfo();
-				this.setSwiperItemHeight();
+			},
+			//更新状态
+			async updateCategoryInfo() {
+				if (this.category_response != null) {
+					await this.getInfoFromStorage(this.category_response);
+					if (this.previousContent != this.currentContent && this.previousContent != null) {
+						//更新界面  
+						this.initialize();
+						this.previousContent == this.currentContent;
+
+					}
+				}
+
 			},
 			//tab点击事件
 			clickTabbar(item, index) {
@@ -85,7 +106,7 @@
 			//获取所有目录信息
 			async getCategoryInfo() {
 				let url = 'http://xxx.xxx.xxx.xxx:8080/category/listall/category';
-				const response = await uni.request({
+				this.category_response = await uni.request({
 					url: url,
 					method: 'GET',
 					data: {},
@@ -94,13 +115,17 @@
 					}
 				});
 				//获取所有收藏缓存及其对应地图id信息
-				await this.getItemFromStorage(response);
+				await this.getItemFromStorage(this.category_response);
 				//基于地图id信息，获取收藏-地图信息
 				await this.getMapInfo();
-			},
 
+				await this.setSwiperItemHeight();
+
+			},
 			//获取所有收藏缓存及其对应地图id信息
 			async getItemFromStorage(response) {
+				let categoryInfo = [];
+				let index = 0;
 				for (const item of response.data.data) {
 					let list = {
 						name: item.name,
@@ -109,7 +134,7 @@
 					};
 					// 获取相应缓存收藏存信息
 					let key = item.name;
-					const res = await new Promise((resolve, reject) => {
+					let currentContent = await new Promise((resolve, reject) => {
 						uni.getStorage({
 							key,
 							complete: function(res) {
@@ -117,12 +142,43 @@
 							}
 						});
 					});
+					if (currentContent.data) {
+						this.currentContent = currentContent.data; 
+						if (this.previousContent == null || this.previousContent.length == 0) {
+							this.previousContent = this.currentContent;
+
+							this.currentIndex = index;
+							this.tabIndex = index;
+						}
+					}
 					// 获取目录
-					list.mid = res.data || []; // 无数据填充默认
-					this.categoryInfo.push(list);
+					list.mid = currentContent.data || []; // 无数据填充默认
+					categoryInfo.push(list);
+					index++;
+				}
+				//this.categoryInfo 直接赋值 绑定刷新生效
+				this.categoryInfo = categoryInfo;
+			},
+			//获取动态缓存信息
+			async getInfoFromStorage(response) {
+				for (const item of response.data.data) {
+					let key = item.name;
+					const currentContent = await new Promise((resolve, reject) => {
+						uni.getStorage({
+							key,
+							complete: function(res) {
+								resolve(res);
+							}
+						});
+					});
+					if (currentContent.data) {
+						this.currentContent = currentContent.data;
+						if (this.previousContent == null) {
+							this.previousContent = this.currentContent;
+						}
+					}
 				}
 			},
-
 			//基于地图id信息，获取收藏-地图信息
 			async getMapInfo() {
 				const map_res = await uni.request({
@@ -147,15 +203,15 @@
 				}
 			},
 			//点击跳转
-			onClick(e) { 
-				console.log(e);
+			onClick(e) {
 				let content = {
 					mid: e.mid,
 					cid: e.cid
 				};
 				uni.navigateTo({
-					url: '/pages/mapDisplay/mapDisplay',
-					events: content
+					url: "/pages/mapDisplay/mapDisplay?cid=" + content.cid + "&mid=" + content.mid,
+					animationType: 'pop-in',
+					animationDuration: 300
 				});
 			}
 		}
@@ -186,5 +242,15 @@
 		display: flex;
 		justify-content: center;
 		align-items: center;
-	} 
+	}
+
+	.custom-right {
+		flex: 1;
+		/* #ifndef APP-NVUE */
+		display: flex;
+		/* #endif */
+		flex-direction: column;
+		justify-content: space-between;
+		align-items: flex-end;
+	}
 </style>
